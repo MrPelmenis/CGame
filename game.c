@@ -8,6 +8,16 @@
 
 #include "myStructs.h"
 
+#include "server.h"
+
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#define PORT 8080
+
+
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
@@ -22,6 +32,12 @@ Ball gameBall = {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, M_PI, M_PI, 10};
 int PlayerW = 20;
 int PlayerH = 50;
 
+
+//client side server variables
+int status, valread, client_fd;
+struct sockaddr_in serv_addr;
+char* hello = "Hello from client";
+char buffer[1024] = { 0 };
 
 // x and y
 PlayerCoords Player = {50, 0};
@@ -53,7 +69,6 @@ void moveBall() {
 
     // Player collision
     //sito rakstija chatgpt jo man ir reali galaks rakstit bulba + taisnsturis logiku :D
-    // Closest point on the rectangle to the circle
     float closestX = (gameBall.x < Player.x) ? Player.x : 
                      (gameBall.x > Player.x + PlayerW) ? Player.x + PlayerW : gameBall.x;
     float closestY = (gameBall.y < Player.y) ? Player.y : 
@@ -106,24 +121,48 @@ void drawBall (SDL_Renderer* renderer, float cX, float cY, float radius){
 
 }
 
-
-void applyDrag(){
-       const float scaledDrag = drag * (FrameTime / 1000.0f);
-
-        if(CurrentMove.y > 0){
-                CurrentMove.y -= scaledDrag;
-                if(CurrentMove.y < 0) CurrentMove.y = 0;
-        }else{
-                if(CurrentMove.y < 0 ){
-                        CurrentMove.y += scaledDrag;
-                }
-                if(CurrentMove.y > 0) CurrentMove.y = 0;
+int sendInfo(char* message) {
+    if (client_fd < 0) { // Reconnect if the socket is closed
+        if (clientInit() < 0) {
+            return -1;
         }
+    }
 
+    ssize_t bytes_sent = send(client_fd, message, strlen(message), 0);
+    if (bytes_sent < 0) {
+        perror("send failed kkapec \n");
+        return -1;
+    }
+
+    printf("Hello message sent: %s\n", message);
+    valread = read(client_fd, buffer, 1024 - 1);
+    if (valread < 0) {
+        perror("read failed?! \n");
+        return -1;
+    }
+    if (valread == 0) {
+        perror("server closed?");
+        close(client_fd);
+        client_fd = -1; // Mark the socket as closed
+        return -1;
+    }
+
+    buffer[valread] = '\0';
+    printf("Serveris atbild: %s\n", buffer);
+    return 0;
 }
+
 
 void updatePlayerCurrentMove(SDL_Event event) {
 	if (event.type == SDL_KEYDOWN) {
+		printf("00000\n");
+		if (sendInfo("test test test yoyoyoy?") != 0) {
+			printf("Error sending message\n");
+			close(client_fd);
+			return;
+		}
+		printf("444444\n");
+
 		if (event.key.keysym.sym == SDLK_a) {
 			//CurrentMove.x += -PlayerAcceleration;
 		} else if (event.key.keysym.sym == SDLK_w) {
@@ -150,8 +189,34 @@ void updatePlayerCurrentMove(SDL_Event event) {
 
 }
 
+
+int clientInit(){
+	if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+                printf("\n Socket creation error \n");
+                return -1;
+        }
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(PORT);
+
+        if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+                printf("\nInvalid address/ Address not supported \n");
+                return -1;
+        }
+
+        if ((status = connect(client_fd, (struct sockaddr*)&serv_addr, sizeof(serv_addr))) < 0) {
+                printf("\nConnection Failed \n");
+                return -1;
+        }
+
+	return 0;
+}
+
 int main() {
 	printf("Normunda Spelite \n \n \n");
+	//startServer();
+	
+	clientInit();
+	
 	SDL_Window* window = NULL;
 	// SDL_Surface* screenSurface = NULL;
 	SDL_Renderer* renderer = NULL;
@@ -179,8 +244,10 @@ int main() {
 			SDL_Event event;
 
 			while (!quit) {
+				//printf("paga sitais printejas vne? \n");
 				while (SDL_PollEvent(&event)) {
 					if (event.type == SDL_QUIT) {
+						printf("seit iegaaja? \n");
 						quit = true;
 					} else {
 						updatePlayerCurrentMove(event);
@@ -231,6 +298,11 @@ int main() {
 				SDL_Delay(FrameTime);
 			}
 
+			//serverim;
+                        printf("sis aizver ciet visu un pizda \n");
+                        close(client_fd);
+
+
 			SDL_DestroyRenderer(renderer);
 			SDL_DestroyWindow(window);
 			SDL_Quit();
@@ -239,3 +311,4 @@ int main() {
 
 	return 0;
 }
+
